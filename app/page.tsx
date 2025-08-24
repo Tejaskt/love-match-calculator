@@ -1,10 +1,22 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Heart, Sparkles, Star } from "lucide-react"
+
+interface AnimationStep {
+  type: "checking" | "counting" | "reducing" | "final"
+  data: any
+}
+
+interface LetterState {
+  char: string
+  isChecking: boolean
+  isCrossed: boolean
+  count: number
+}
 
 export default function LoveMatchCalculator() {
   const [name1, setName1] = useState("")
@@ -13,73 +25,160 @@ export default function LoveMatchCalculator() {
   const [result, setResult] = useState<number | null>(null)
   const [showResult, setShowResult] = useState(false)
 
-  const calculateLoveMatch = () => {
+  const [animationStep, setAnimationStep] = useState<AnimationStep | null>(null)
+  const [name1Letters, setName1Letters] = useState<LetterState[]>([])
+  const [name2Letters, setName2Letters] = useState<LetterState[]>([])
+  const [currentString, setCurrentString] = useState("")
+  const [reductionSteps, setReductionSteps] = useState<string[]>([])
+  const [animatedPercentage, setAnimatedPercentage] = useState(0)
+
+  useEffect(() => {
+    if (result !== null && showResult && animatedPercentage < result) {
+      const timer = setTimeout(() => {
+        setAnimatedPercentage((prev) => Math.min(prev + 1, result))
+      }, 30)
+      return () => clearTimeout(timer)
+    }
+  }, [result, showResult, animatedPercentage])
+
+  const calculateLoveMatch = async () => {
     if (!name1.trim() || !name2.trim()) return
 
     setIsCalculating(true)
     setShowResult(false)
+    setAnimatedPercentage(0)
 
-    // Simulate calculation delay for better UX
-    setTimeout(() => {
-      const firstName = name1.toLowerCase().trim()
-      const secondName = name2.toLowerCase().trim()
+    const firstName = name1.toLowerCase().trim()
+    const secondName = name2.toLowerCase().trim()
 
-      let resultString = ""
-      const secondNameChars = secondName.split("")
+    const name1LetterStates: LetterState[] = firstName.split("").map((char) => ({
+      char,
+      isChecking: false,
+      isCrossed: false,
+      count: 0,
+    }))
 
-      // Process each character in first name
-      for (const char of firstName) {
-        let count = 0
+    const name2LetterStates: LetterState[] = secondName.split("").map((char) => ({
+      char,
+      isChecking: false,
+      isCrossed: false,
+      count: 0,
+    }))
 
-        // Count occurrences in first name
-        for (const c of firstName) {
-          if (c === char) count++
-        }
+    setName1Letters(name1LetterStates)
+    setName2Letters(name2LetterStates)
 
-        // Count occurrences in second name and remove them
-        for (let i = secondNameChars.length - 1; i >= 0; i--) {
-          if (secondNameChars[i] === char) {
-            count++
-            secondNameChars.splice(i, 1)
-          }
-        }
+    let resultString = ""
+    const secondNameChars = secondName.split("")
 
-        resultString += count.toString()
+    for (let i = 0; i < firstName.length; i++) {
+      const char = firstName[i]
+
+      // Highlight current letter being checked
+      setName1Letters((prev) =>
+        prev.map((letter, idx) => ({
+          ...letter,
+          isChecking: idx === i,
+        })),
+      )
+
+      setAnimationStep({
+        type: "checking",
+        data: { currentChar: char, currentIndex: i },
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 800))
+
+      let count = 0
+
+      // Count occurrences in first name
+      for (const c of firstName) {
+        if (c === char) count++
       }
 
-      // Add remaining characters from second name
-      for (const char of secondNameChars) {
-        resultString += "1"
-      }
-
-      console.log("[v0] Initial result string:", resultString)
-
-      // Reduce the string by pairing and adding adjacent digits
-      while (resultString.length > 2) {
-        let newString = ""
-
-        for (let i = 0; i < resultString.length; i += 2) {
-          if (i + 1 < resultString.length) {
-            // Pair exists - add the two digits
-            const sum = Number.parseInt(resultString[i]) + Number.parseInt(resultString[i + 1])
-            newString += sum.toString()
-          } else {
-            // Odd character at the end - take as is
-            newString += resultString[i]
-          }
+      // Count occurrences in second name and remove them
+      for (let j = secondNameChars.length - 1; j >= 0; j--) {
+        if (secondNameChars[j] === char) {
+          count++
+          // Animate crossing out in second name
+          setName2Letters((prev) =>
+            prev.map((letter, idx) =>
+              letter.char === char && !letter.isCrossed ? { ...letter, isCrossed: true } : letter,
+            ),
+          )
+          secondNameChars.splice(j, 1)
+          await new Promise((resolve) => setTimeout(resolve, 300))
         }
-
-        resultString = newString
-        console.log("[v0] Reduced string:", resultString)
       }
 
-      const matchPercentage = Number.parseInt(resultString)
-      console.log("[v0] Final match percentage:", matchPercentage)
+      // Update count for current letter
+      setName1Letters((prev) =>
+        prev.map((letter, idx) => ({
+          ...letter,
+          isChecking: false,
+          count: idx === i ? count : letter.count,
+        })),
+      )
 
-      setResult(matchPercentage)
-      setIsCalculating(false)
-      setShowResult(true)
-    }, 2000)
+      resultString += count.toString()
+      setCurrentString(resultString)
+
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+
+    // Add remaining characters from second name
+    for (const char of secondNameChars) {
+      resultString += "1"
+    }
+    setCurrentString(resultString)
+
+    setAnimationStep({
+      type: "counting",
+      data: { initialString: resultString },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
+    const steps = [resultString]
+    let workingString = resultString
+
+    while (workingString.length > 2) {
+      let newString = ""
+
+      for (let i = 0; i < workingString.length; i += 2) {
+        if (i + 1 < workingString.length) {
+          const sum = Number.parseInt(workingString[i]) + Number.parseInt(workingString[i + 1])
+          newString += sum.toString()
+        } else {
+          newString += workingString[i]
+        }
+      }
+
+      workingString = newString
+      steps.push(workingString)
+      setReductionSteps([...steps])
+      setCurrentString(workingString)
+
+      setAnimationStep({
+        type: "reducing",
+        data: { steps: [...steps] },
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+
+    const matchPercentage = Number.parseInt(workingString)
+
+    setAnimationStep({
+      type: "final",
+      data: { percentage: matchPercentage },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    setResult(matchPercentage)
+    setIsCalculating(false)
+    setShowResult(true)
   }
 
   const resetCalculator = () => {
@@ -87,6 +186,12 @@ export default function LoveMatchCalculator() {
     setName2("")
     setResult(null)
     setShowResult(false)
+    setAnimationStep(null)
+    setName1Letters([])
+    setName2Letters([])
+    setCurrentString("")
+    setReductionSteps([])
+    setAnimatedPercentage(0)
   }
 
   const getMatchMessage = (percentage: number) => {
@@ -116,7 +221,7 @@ export default function LoveMatchCalculator() {
       </div>
 
       <div className="relative z-10 container mx-auto px-4 py-8 flex items-center justify-center min-h-screen">
-        <Card className="w-full max-w-md shadow-2xl border-0 bg-card/95 backdrop-blur-sm">
+        <Card className="w-full max-w-2xl shadow-2xl border-0 bg-card/95 backdrop-blur-sm">
           <CardHeader className="text-center space-y-4">
             <div className="flex justify-center">
               <div className="relative">
@@ -141,6 +246,7 @@ export default function LoveMatchCalculator() {
                       value={name1}
                       onChange={(e) => setName1(e.target.value)}
                       className="border-border focus:ring-primary/50"
+                      disabled={isCalculating}
                     />
                   </div>
 
@@ -155,9 +261,106 @@ export default function LoveMatchCalculator() {
                       value={name2}
                       onChange={(e) => setName2(e.target.value)}
                       className="border-border focus:ring-primary/50"
+                      disabled={isCalculating}
                     />
                   </div>
                 </div>
+
+                {isCalculating && animationStep && (
+                  <div className="bg-muted/30 rounded-lg p-6 space-y-4 border border-primary/20">
+                    <div className="text-center text-sm font-medium text-primary">
+                      {animationStep.type === "checking" && "Checking letters..."}
+                      {animationStep.type === "counting" && "Counting matches..."}
+                      {animationStep.type === "reducing" && "Calculating compatibility..."}
+                      {animationStep.type === "final" && "Almost there..."}
+                    </div>
+
+                    {/* Letter visualization */}
+                    {(animationStep.type === "checking" || animationStep.type === "counting") && (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <div className="text-xs text-muted-foreground">First Name:</div>
+                          <div className="flex flex-wrap gap-2 justify-center">
+                            {name1Letters.map((letter, idx) => (
+                              <div
+                                key={idx}
+                                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-all duration-300 ${
+                                  letter.isChecking
+                                    ? "border-primary bg-primary text-primary-foreground animate-pulse scale-110"
+                                    : letter.count > 0
+                                      ? "border-accent bg-accent/20 text-accent"
+                                      : "border-muted-foreground text-muted-foreground"
+                                }`}
+                              >
+                                {letter.char.toUpperCase()}
+                                {letter.count > 0 && (
+                                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-accent text-accent-foreground text-xs rounded-full flex items-center justify-center">
+                                    {letter.count}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-xs text-muted-foreground">Second Name:</div>
+                          <div className="flex flex-wrap gap-2 justify-center">
+                            {name2Letters.map((letter, idx) => (
+                              <div
+                                key={idx}
+                                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-all duration-300 relative ${
+                                  letter.isCrossed
+                                    ? "border-destructive bg-destructive/20 text-destructive line-through"
+                                    : "border-muted-foreground text-muted-foreground"
+                                }`}
+                              >
+                                {letter.char.toUpperCase()}
+                                {letter.isCrossed && (
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-6 h-0.5 bg-destructive rotate-45"></div>
+                                    <div className="w-6 h-0.5 bg-destructive -rotate-45 absolute"></div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {currentString && (
+                          <div className="text-center">
+                            <div className="text-xs text-muted-foreground mb-2">Current Number:</div>
+                            <div className="text-2xl font-bold text-primary font-mono tracking-wider">
+                              {currentString}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Reduction steps visualization */}
+                    {animationStep.type === "reducing" && reductionSteps.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="text-xs text-muted-foreground text-center">Reduction Steps:</div>
+                        {reductionSteps.map((step, idx) => (
+                          <div
+                            key={idx}
+                            className={`text-center transition-all duration-500 ${
+                              idx === reductionSteps.length - 1
+                                ? "text-2xl font-bold text-primary scale-110"
+                                : "text-lg text-muted-foreground"
+                            }`}
+                          >
+                            <div className="font-mono tracking-wider">{step}</div>
+                            {idx < reductionSteps.length - 1 && (
+                              <div className="text-xs text-muted-foreground mt-1">↓</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <Button
                   onClick={calculateLoveMatch}
@@ -182,7 +385,7 @@ export default function LoveMatchCalculator() {
             ) : (
               <div className="text-center space-y-6 animate-in fade-in-50 duration-500">
                 <div className="space-y-2">
-                  <div className="text-6xl font-bold text-primary animate-pulse">{result}%</div>
+                  <div className="text-6xl font-bold text-primary animate-pulse">{animatedPercentage}%</div>
                   <div className="text-xl font-semibold text-accent">{result && getMatchMessage(result)}</div>
                 </div>
 
@@ -190,7 +393,7 @@ export default function LoveMatchCalculator() {
                   {[...Array(5)].map((_, i) => (
                     <Star
                       key={i}
-                      className={`w-6 h-6 ${
+                      className={`w-6 h-6 transition-all duration-300 ${
                         result && i < Math.floor(result / 20) ? "text-accent animate-pulse" : "text-muted-foreground"
                       }`}
                       fill="currentColor"
